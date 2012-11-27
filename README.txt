@@ -7,7 +7,8 @@ This part of my assignment works as specified. The url for my webpage is:
 http://www.cs.columbia.edu/~ess2183/cs3157/tng/
 My webpage is identical to Jae's.
 
-Part 2:
+Part 2: Web server
+Part a: Serving static contents
 
 
 This file should contain:

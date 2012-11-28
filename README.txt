@@ -9,7 +9,7 @@ My webpage is identical to Jae's.
 
 Part 2: Web server
 Part a: Serving static contents
-
+This part of my program works as directed. I ran valgrind on my program, testing using netcat and Safari, and the end result was All heap blocks were freed - no leaks are possible (0 errors from 0 contexts)
 
 This file should contain:
 

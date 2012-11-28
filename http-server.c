@@ -114,50 +114,34 @@ void HandleTCPClient(int clntSocket, char* web_root, char* IPaddr)
       char *requestURI = strtok(NULL, token_separators);
       char *httpVersion = strtok(NULL, token_separators);
 
-      char *sendHeader = "HTTP/1.0";
-      char *outtext = method;
+      FILE *read_file;
+
+      char *outtext = IPaddr;
+      int sendlength = 0;
+      int type = 0;
 
       if(method == NULL || requestURI == NULL 
 	 || httpVersion == NULL || strncmp("/", requestURI, 1) != 0)
 	{ // request URI must start with /
 	  // otherwise send 400 bad request
-	  fprintf(stdout, "%s \"%s %s %s\" 400 Bad Request\n", 
-		  IPaddr, method, requestURI, httpVersion);
-	  fflush(stdout);
-	  int length = sprintf(out_buffer, "HTTP/1.0 400 Bad Request\n"
-		 "\n<html><body><h1>400 Bad Request</h1></body></html>\n");
-	  if(send(clntSocket, out_buffer, length, 0) != length)
-	    {
-	      fclose(input);
-	      die("send() failed");
-	    }
-	  fclose(input);
+	  outtext = "400 Bad Request\n", 
+	    IPaddr, method, requestURI, httpVersion;
+	  sendlength = sprintf(out_buffer, "HTTP/1.0 400 Bad Request\n"
+		"\n<html><body><h1>400 Bad Request</h1></body></html>\n");
 	}
       else if((strcmp("GET", method) != 0) || 
 	 (strcmp("HTTP/1.0", httpVersion) != 0 && 
 	  strcmp("HTTP/1.1", httpVersion) != 0))
 	{ // only support GET method, must be either HTTP/1.0 or 1.1
 	  // otherwise send 501 not implemented
-	  fprintf(stdout, "%s \"%s %s %s\" 501 Not Implemented\n", 
-		  IPaddr, method, requestURI, httpVersion);
-	  fflush(stdout);
-	  int length = sprintf(out_buffer, "HTTP/1.0 501 Not Implemented\n"
+	  outtext = "501 Not Implemented\n", 
+	    IPaddr, method, requestURI, httpVersion;
+	  sendlength = sprintf(out_buffer, "HTTP/1.0 501 Not Implemented\n"
 		"\n<html><body><h1>501 Not Implemented</h1></body></html>\n");
-	  if(send(clntSocket, out_buffer, length, 0) != length)
-	    {
-	      fclose(input);
-	      die("send() failed");
-	    }
-	  fclose(input);
 	}
       // successful request, send what they ask for
       else if(strcmp(requestURI, "/mdb-lookup") == 0)
 	{
-
-	  fprintf(stdout, "%s \"%s %s %s\" 200 OK\n", 
-		  IPaddr, method, requestURI, httpVersion);
-	  fflush(stdout);
-
 	  const char *form = "<html><body><h1>mdb-lookup</h1>\n"
 	    "<p>\n"
 	    "<form method=GET action=/mdb-lookup>\n"
@@ -166,12 +150,9 @@ void HandleTCPClient(int clntSocket, char* web_root, char* IPaddr)
 	    "</form>\n"
 	    "<p></body></html>\n";
 
-	  if(send(clntSocket, form, strlen(form), 0) != strlen(form)) 
-	    {
-	      fclose(input);
-	      die("send() failed");
-	    }
-	  fclose(input);
+	  outtext = "200 OK\n", 
+	    IPaddr, method, requestURI, httpVersion;
+	  sendlength = sprintf(out_buffer, "%s", form);
 	}
       else
 	{
@@ -183,50 +164,55 @@ void HandleTCPClient(int clntSocket, char* web_root, char* IPaddr)
 	      char *end = "index.html";
 	      strcat(webfile, end);
 	    }
-	  FILE* read_file = fopen(webfile, "rb");
+	  read_file = fopen(webfile, "rb");
 	  if(read_file == NULL)
 	    {
-	      fprintf(stdout, "%s \"%s %s %s\" 404 Not Found\n", 
-		  IPaddr, method, requestURI, httpVersion);
-	      fflush(stdout);
-	      int length = sprintf(out_buffer, "HTTP/1.0 404 Not Found\n"
+	      outtext = "404 Not Found\n", 
+		IPaddr, method, requestURI, httpVersion;
+	      sendlength = sprintf(out_buffer, "HTTP/1.0 404 Not Found\n"
 		 "\n<html><body><h1>404 Not Found</h1></body></html>\n");
-	      if(send(clntSocket, out_buffer, length, 0) != length)
-		{
-		  fclose(input);
-		  die("send() here failed");
-		}
-	      fclose(input);
 	    }
 	  else
 	    {
-	      fprintf(stdout, "%s \"%s %s %s\" 200 OK\n", 
-		      IPaddr, method, requestURI, httpVersion);
-	      fflush(stdout);
-	      int length = 0;
-	      char* header = "HTTP/1.0 200 OK\n\n";
-	      if(send(clntSocket, header, strlen(header), 0) != strlen(header))
-		{
-		  fclose(input);
-		  die("header failed");
-		}
-	      while((length = 
-		     fread(out_buffer, 1, sizeof(out_buffer), read_file)) > 0)
-		{
-		  if (ferror(input)) 
-		    {
-		      perror("send failed");
-		      exit(1);
-		    }
-		  if(send(clntSocket, out_buffer, length, 0) != length) 
-		    {
-		      fclose(input);
-		      die("send() failed");
-		    }
-		  memset(out_buffer, '\0', strlen(out_buffer));
-		}
-	      fclose(input);
+	      outtext = "200 OK\n", 
+		IPaddr, method, requestURI, httpVersion;
+	      sendlength = sprintf(out_buffer, "HTTP/1.0 200 OK\n\n");
+	      type = 1;
 	    }
     	}
+
+      fprintf(stdout, "%s \"%s %s %s\" %s", 
+	      IPaddr, method, requestURI, httpVersion, outtext);
+      fflush(stdout);
+    
+      if(send(clntSocket, out_buffer, sendlength, 0) != sendlength)
+	{
+	  fclose(input);
+	  die("send() has failed");
+	}
+    
+      if(type == 1)
+	{
+	  memset(out_buffer, '\0', strlen(out_buffer));
+	  while((sendlength = fread(out_buffer, 1, sizeof(out_buffer), read_file)) > 0)
+	    {
+	      if(ferror(input))
+		{
+		  perror("send failed");
+		  fclose(input);
+		  fclose(read_file);
+		  exit(1);
+		}
+	      if(send(clntSocket, out_buffer, sendlength, 0) != sendlength)
+		{
+		  fclose(input);
+		  fclose(read_file);
+		  die("send() failed");
+		}
+	    }
+	  fclose(read_file);
+	}
+      fclose(input);
     }
+
 }

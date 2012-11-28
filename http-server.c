@@ -24,7 +24,7 @@ static void die(const char *msg)
   exit(1);
 }
 
-void HandleTCPClient(int clntSocket);
+void HandleTCPClient(int clntSocket, char *web_root);
 
 int main(int argc, char **argv)
 {
@@ -41,7 +41,8 @@ int main(int argc, char **argv)
 
   if(argc != 5)
     {
-      fprintf(stderr, "Usage: %s <server_port> <web_root> <mdb-lookup-host> <mdb-lookup-port>\n", argv[0]);
+      fprintf(stderr,"Usage: %s <server_port> <web_root> "
+	      "<mdb-lookup-host> <mdb-lookup-port>\n", argv[0]);
       exit(1);
     }
 
@@ -86,7 +87,7 @@ int main(int argc, char **argv)
       fprintf(stderr, "\nconnection started from: %s\n", 
 	      inet_ntoa(clntAddr.sin_addr));
       
-      HandleTCPClient(clntSock);
+      HandleTCPClient(clntSock, webroot);
       
       fprintf(stderr, "connection terminated from: %s\n", 
 	      inet_ntoa(clntAddr.sin_addr));
@@ -94,7 +95,7 @@ int main(int argc, char **argv)
   /* NOT REACHED */
 }
 
-void HandleTCPClient(int clntSocket)
+void HandleTCPClient(int clntSocket, char* web_root)
 {
   // Wrap the socket with a FILE* using fdopen()
   FILE *input = fdopen(clntSocket, "r"); 
@@ -102,61 +103,83 @@ void HandleTCPClient(int clntSocket)
     die("fdopen failed");
 
   char requestline[SENDSIZE];
+  char out_buffer[SENDSIZE];
   char *token_separators = "\t \r\n";
-  int line = 0;
-  while(fgets(requestline, sizeof(requestline), input) != NULL)
+  if(recv(clntSocket,requestline, sizeof(requestline), 0) > 0)
     {
       fprintf(stderr, "%s", requestline);
-      if(line == 0)
-	{
-	  // parse the first line
-	  char *method = strtok(requestline, token_separators);
-	  char *requestURI = strtok(NULL, token_separators);
-	  char *httpVersion = strtok(NULL, token_separators);
-	  /* for debuggings */
-	  fprintf(stderr, "\tMETHOD- %s, URI- %s, HTTP- %s.\n", method, requestURI, httpVersion);
+      // parse the first line
+      char *method = strtok(requestline, token_separators);
+      char *requestURI = strtok(NULL, token_separators);
+      char *httpVersion = strtok(NULL, token_separators);
+      /* for debugging
+	 fprintf(stderr, "METHOD- %s, URI- %s, HTTP- %s.\n",method, requestURI, httpVersion);*/
 
-	  if(strncmp("GET", method, strlen(method)) != 0)
+      if((strncmp("GET", method, strlen(method)) != 0) || 
+	 (strncmp("HTTP/1.0", httpVersion, 8) != 0 && 
+	  strncmp("HTTP/1.1", httpVersion, 8) != 0))
+	{ // only support GET method, must be either HTTP/1.0 or 1.1
+	  // otherwise send 501 not implemented
+	  int length = sprintf(out_buffer, "HTTP/1.0 501 Not Implemented"
+		"\n\n<html><body><h1>501 Not Implemented</h1></body></html>");
+	  if(send(clntSocket, out_buffer, length, 0) != length)
 	    {
-	      // only support GET method
-	      // 501 not implemented
+	      perror("send() failed");
+	      fclose(input);
 	    }
-	  if(strncmp("HTTP/1.0", httpVersion, 8) != 0 && strncmp("HTTP/1.1", httpVersion, 8) != 0)
-	    { // must be either HTTP/1.0 or 1.1
-	      // 501 not implemented
-	    }
-	  if(strncmp("/", requestURI, 1) != 0)
-	    { // request URI must start with /
-	      // 400 Bad Request 
-
-	    }
-	  line++;
 	}
+      else if(strncmp("/", requestURI, 1) != 0)
+	{ // request URI must start with /
+	  // otherwise send 400 bad request
+	  int length = sprintf(out_buffer, "400 Bad Request");
+	  if(send(clntSocket, out_buffer, length, 0) != length)
+	    {
+	      perror("send() failed");
+	      fclose(input);
+	    }
+	}
+      // successful request, send what they ask for
+      else
+	{
+	  int linesread = 0;
+	  char webfile[strlen(web_root) + strlen(requestURI) + 11];
+	  strncpy(webfile, web_root, sizeof(webfile));
+	  strcat(webfile, requestURI);
+	  if(requestURI[strlen(requestURI)-1] == '/')
+	    { //if it ends in /, append index.html
+	      char *end = "index.html";
+	      strcat(webfile, end);
+	    }
+	  fprintf(stderr, "%s\n", webfile);
+	  FILE* read_file = fopen(webfile, "rb");
 
-
+	  while(fread(out_buffer, 1, SENDSIZE, read_file) != 0)
+	    {
+	      //int len = sprintf(out_buffer, *whatever we just read*);
+	      if(send(clntSocket, out_buffer, strlen(out_buffer), 0) 
+		 !=  strlen(out_buffer))
+		{
+		  perror("send() failed");
+		  break;
+		}
+	      fprintf(stderr, "%s\n", out_buffer);
+	    }
+	  // if haven't sent anything
+	  if(linesread == 0)
+	    {
+	      //file not found  - 404?
+	      
+	    }
+	}
     }
 
-  /*
-  if(strncmp("HTTP/1.0 ", buf, 9) != 0 && strncmp("HTTP/1.1 ", buf, 9) != 0)
-    {
-      fprintf(stderr, "unknown protocol response: %s\n", buf);
-      exit(1);
-    }
-  */
-
-
-  /* CHANGE: we changed printf() into sprintf() & send()
-  len = sprintf(out_buf, "%4d: {%s} said {%s}\n", recNo, rec->name, rec->msg);
-  if ((res = send(clntSocket, out_buf, len, 0)) != len) 
-  {
-  perror("send() failed");
-  break; 
-  }*/
-  
   // CHANGE: check 'input' rather than 'stdin'
   // see if fgets() produced error
   if (ferror(input)) 
+    {
       perror("fgets() failed");
+      exit(1);
+    }
 
   // Close the socket by closing the FILE* wrapper
   fclose(input);

@@ -184,8 +184,9 @@ void HandleTCPClient(int clntSocket, char* web_root, char* IPaddr, int MDBsock)
 	    "<form method=GET action=/mdb-lookup>\n"
 	    "lookup: <input type=text name=key>\n"
 	    "<input type=submit>\n"
-	    "</form>\n"
-	    "<p></body></html>\n";
+	    "</form>\n" "<p>\n</p>\n<p>\n"
+	    "<table border>\n"
+	    "<tbody>\n";
 
 	  outtext = "200 OK\n";
 	  sendlength = sprintf(out_buffer, "%s", form);
@@ -256,16 +257,14 @@ void HandleTCPClient(int clntSocket, char* web_root, char* IPaddr, int MDBsock)
 	{
 	  char buf[1000];
 	  char *key = strstr(requestURI, "=") + 1;
-	  fprintf(stderr, "%s\n", key);
-
+	  // get the key
+	  sprintf(buf, "%s\n", key);
 	  // send HTTP request
-	  snprintf(buf, sizeof(buf), "%s\n", key);
 	  if(send(MDBsock, buf, strlen(buf), 0) != strlen(buf))
 	    {
 	      fclose(input);
 	      die("send mdbsock failed");
 	    }
-
 	  // open socket to read results
 	  FILE* mdbsockfd;
 	  if((mdbsockfd = fdopen(MDBsock, "r")) == NULL)
@@ -273,36 +272,33 @@ void HandleTCPClient(int clntSocket, char* web_root, char* IPaddr, int MDBsock)
 	      fclose(input);
 	      die("fd mdb failed");
 	    }
-	  size_t n;
+	  char buf2[SENDSIZE];
+	  memset(buf, '\0', sizeof(buf));
 	  while(strcmp(fgets(buf, sizeof(buf), mdbsockfd), "\n") != 0)
-	    //(n = fread(buf, 1, sizeof(buf), mdbsockfd) > 1))
 	    {
-	      fprintf(stderr, "%s\n", buf);
-	      fflush(stderr);
-
 	      //send results
-
-
+	      sprintf(buf2, "<tr>\n<td>\n %s </td></tr>", buf);
+	      if(send(clntSocket, buf2, strlen(buf2), 0) != strlen(buf2))
+		{
+		  fclose(mdbsockfd);
+		  fclose(input);
+		  die("send mdb fialed");
+		}
 	    }
-	  fprintf(stderr, "hi");
+	  // close out the table and html sending
+	  snprintf(buf, strlen(buf), "</tbody></table></p></body></html>\n");
+	  if(send(clntSocket, buf, strlen(buf), 0) != strlen(buf))
+	    {
+	      fclose(mdbsockfd);
+	      fclose(input);
+	      die("sendd.d fail");
+	    }
 	  if(ferror(mdbsockfd))
-	    die("fread failed");
-	  
-
-	  // send results
-
-	  /* HTML TABLE FORMAT
-	  <table>
-	     <tr>
-	     <td>row 1, cell 1</td>
-	     <td>row 1, cell 2</td>
-	     </tr>
-	     <tr>
-	     <td>row 2, cell 1</td>
-	     </tr>
-	  </table>
-	  */
-	  
+	    {
+	      fclose(mdbsockfd);
+	      fclose(input);
+	      die("fread failed");
+	    }
 	  fclose(mdbsockfd);
 	}
       fclose(input);

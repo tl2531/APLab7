@@ -9,6 +9,8 @@
 
 #include <stdio.h>        /* for printf() and fprintf() */
 #include <sys/socket.h>   /* for socket(), bind(), connect() */
+#include <sys/types.h>
+#include <netdb.h>
 #include <arpa/inet.h>    /* for sockaddr_in and inet_ntoa() */
 #include <stdlib.h>       /* for atoi() and exit() */
 #include <string.h>       /* for memset() */
@@ -24,7 +26,7 @@ static void die(const char *msg)
   exit(1);
 }
 
-void HandleTCPClient(int clntSocket, char *web_root, char* IPaddr);
+void HandleTCPClient(int clntSocket, char *web_root, char* IPaddr, int MDBsock);
 
 int main(int argc, char **argv)
 {
@@ -50,15 +52,36 @@ int main(int argc, char **argv)
   servPort = atoi(argv[1]); /* second arg: server port */
   char *webroot = argv[2];  /* third arg: root */
 
-  char *mdb_host = argv[3];  /*fourth arg: host path */
-  unsigned short mdb_port = atoi(argv[4]);  /* fifth arg: lookup port */
-
   /* Create socket for mdb-lookup */
+  char *mdbserverName = argv[3];   /* fourth arg: mdb host server */
+  char *mdbserverIP;
+  char *mdbserverPort = argv[4];   /* fifth arg: lookup port */
 
+  int MDBsock;
+  struct sockaddr_in mdbserverAddr;
+  struct hostent *mdbhe;
 
+  // get server ip from server name
+  if ((mdbhe = gethostbyname(mdbserverName)) == NULL)
+    die("gethostbyname failed");
+  
+  mdbserverIP = inet_ntoa(*(struct in_addr *)mdbhe->h_addr);
+  
+  if((MDBsock = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP)) < 0)
+    die("mdb socket() failed");
 
-  // if((clntSocket
+  //construct server address
+  memset(&mdbserverAddr, 0, sizeof(mdbserverAddr));
+  mdbserverAddr.sin_family = AF_INET;
+  mdbserverAddr.sin_addr.s_addr = inet_addr(mdbserverIP);
+  unsigned short mdbport = atoi(mdbserverPort);
+  mdbserverAddr.sin_port = htons(mdbport);
 
+  //connect
+  if(connect(MDBsock, (struct sockaddr *)&mdbserverAddr, sizeof(mdbserverAddr)) < 0)
+      die("connect for mdb failed");
+
+  //PART A
 
   /* Create socket for incoming connections */
   if((servSock = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP)) < 0)
@@ -88,16 +111,15 @@ int main(int argc, char **argv)
 			     &clntLen)) < 0)
 	die("accept() failed");
       
-      /* clntSock is connected to a client! */
-      
+      /* clntSock is connected to a client! */ 
       char *clntIPaddr = inet_ntoa(clntAddr.sin_addr);
       
-      HandleTCPClient(clntSock, webroot, clntIPaddr);
+      HandleTCPClient(clntSock, webroot, clntIPaddr, MDBsock);
     }
   /* NOT REACHED */
 }
 
-void HandleTCPClient(int clntSocket, char* web_root, char* IPaddr)
+void HandleTCPClient(int clntSocket, char* web_root, char* IPaddr, int MDBsock)
 {
   // Wrap the socket with a FILE* using fdopen()
   FILE *input = fdopen(clntSocket, "r"); 
@@ -110,9 +132,9 @@ void HandleTCPClient(int clntSocket, char* web_root, char* IPaddr)
   if(recv(clntSocket,requestline, sizeof(requestline), 0) > 0)
     {
       // parse the first line
-      char *method = strtok(requestline, token_separators);
-      char *requestURI = strtok(NULL, token_separators);
-      char *httpVersion = strtok(NULL, token_separators);
+      char *method = strtok(requestline, token_separators); // GET
+      char *requestURI = strtok(NULL, token_separators);   // /cs3157/tng/
+      char *httpVersion = strtok(NULL, token_separators);  // HTTP/1.0
 
       FILE *read_file;
 
@@ -120,26 +142,27 @@ void HandleTCPClient(int clntSocket, char* web_root, char* IPaddr)
       int sendlength = 0;
       int type = 0;
 
+      // request URI must start with '/'
+      // otherwise send 400 Bad Request
       if(method == NULL || requestURI == NULL 
 	 || httpVersion == NULL || strncmp("/", requestURI, 1) != 0)
-	{ // request URI must start with /
-	  // otherwise send 400 bad request
-	  outtext = "400 Bad Request\n", 
-	    IPaddr, method, requestURI, httpVersion;
+	{ 
+	  outtext = "400 Bad Request\n";
 	  sendlength = sprintf(out_buffer, "HTTP/1.0 400 Bad Request\n"
 		"\n<html><body><h1>400 Bad Request</h1></body></html>\n");
 	}
+      // only support GET method, must be either HTTP/1.0 or 1.1
+      // otherwise send 501 Not Implemented
       else if((strcmp("GET", method) != 0) || 
 	 (strcmp("HTTP/1.0", httpVersion) != 0 && 
 	  strcmp("HTTP/1.1", httpVersion) != 0))
-	{ // only support GET method, must be either HTTP/1.0 or 1.1
-	  // otherwise send 501 not implemented
-	  outtext = "501 Not Implemented\n", 
-	    IPaddr, method, requestURI, httpVersion;
+	{
+	  outtext = "501 Not Implemented\n";
 	  sendlength = sprintf(out_buffer, "HTTP/1.0 501 Not Implemented\n"
 		"\n<html><body><h1>501 Not Implemented</h1></body></html>\n");
 	}
       // successful request, send what they ask for
+      // mdb-lookup input page
       else if(strcmp(requestURI, "/mdb-lookup") == 0)
 	{
 	  const char *form = "<html><body><h1>mdb-lookup</h1>\n"
@@ -150,15 +173,31 @@ void HandleTCPClient(int clntSocket, char* web_root, char* IPaddr)
 	    "</form>\n"
 	    "<p></body></html>\n";
 
-	  outtext = "200 OK\n", 
-	    IPaddr, method, requestURI, httpVersion;
+	  outtext = "200 OK\n";
 	  sendlength = sprintf(out_buffer, "%s", form);
+	}
+      // mdb-lookup print results page
+      else if(strncmp(requestURI, "/mdb-lookup?key", 15) == 0)
+	{
+	  const char *form = "<html><body><h1>mdb-lookup</h1>\n"
+	    "<p>\n"
+	    "<form method=GET action=/mdb-lookup>\n"
+	    "lookup: <input type=text name=key>\n"
+	    "<input type=submit>\n"
+	    "</form>\n"
+	    "<p></body></html>\n";
+
+	  outtext = "200 OK\n";
+	  sendlength = sprintf(out_buffer, "%s", form);
+	  type = 2;
+
 	}
       else
 	{
 	  char webfile[strlen(web_root) + strlen(requestURI) + 11];
 	  strncpy(webfile, web_root, sizeof(webfile));
 	  strcat(webfile, requestURI);
+	  // add the index.html if it ends with a /
 	  if(requestURI[strlen(requestURI)-1] == '/')
 	    { //if it ends in /, append index.html
 	      char *end = "index.html";
@@ -167,34 +206,34 @@ void HandleTCPClient(int clntSocket, char* web_root, char* IPaddr)
 	  read_file = fopen(webfile, "rb");
 	  if(read_file == NULL)
 	    {
-	      outtext = "404 Not Found\n", 
-		IPaddr, method, requestURI, httpVersion;
+	      outtext = "404 Not Found\n";
 	      sendlength = sprintf(out_buffer, "HTTP/1.0 404 Not Found\n"
 		 "\n<html><body><h1>404 Not Found</h1></body></html>\n");
 	    }
+	  // file exists, we will send in - type 1
 	  else
 	    {
-	      outtext = "200 OK\n", 
-		IPaddr, method, requestURI, httpVersion;
+	      outtext = "200 OK\n";
 	      sendlength = sprintf(out_buffer, "HTTP/1.0 200 OK\n\n");
 	      type = 1;
 	    }
     	}
-
+      // log each request to stdout
       fprintf(stdout, "%s \"%s %s %s\" %s", 
 	      IPaddr, method, requestURI, httpVersion, outtext);
       fflush(stdout);
-    
+      // send the out_buffer
       if(send(clntSocket, out_buffer, sendlength, 0) != sendlength)
 	{
 	  fclose(input);
 	  die("send() has failed");
 	}
-    
+      // for sending real files (index.html, ship.jpg, crew.jpg)
       if(type == 1)
 	{
 	  memset(out_buffer, '\0', strlen(out_buffer));
-	  while((sendlength = fread(out_buffer, 1, sizeof(out_buffer), read_file)) > 0)
+	  while((sendlength = fread(out_buffer, 1, 
+				    sizeof(out_buffer), read_file)) > 0)
 	    {
 	      if(ferror(input))
 		{
@@ -211,6 +250,31 @@ void HandleTCPClient(int clntSocket, char* web_root, char* IPaddr)
 		}
 	    }
 	  fclose(read_file);
+	}
+      // for sending mdb-lookup results
+      else if(type == 2)
+	{
+	  char buf[1000];
+
+	  char *key = strstr(requestURI, "?") + 1;
+	  fprintf(stderr, "%s\n", key);
+	  // send HTTP request
+	  snprintf(buf, sizeof(buf), "%s\n", key);
+	  if(send(MDBsock, buf, strlen(buf), 0) != strlen(buf))
+	    {
+	      fclose(input);
+	      die("send mdbsock failed");
+	    }
+	  FILE* mdbsockfd;
+	  if((mdbsockfd = fdopen(MDBsock, "r")) == NULL)
+	    {
+	      fclose(input);
+	      die("fd mdb failed");
+	    }
+	  
+
+
+
 	}
       fclose(input);
     }

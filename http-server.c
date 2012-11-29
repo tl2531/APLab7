@@ -255,9 +255,9 @@ void HandleTCPClient(int clntSocket, char* web_root, char* IPaddr, int MDBsock)
       else if(type == 2)
 	{
 	  char buf[1000];
-
-	  char *key = strstr(requestURI, "?") + 1;
+	  char *key = strstr(requestURI, "=") + 1;
 	  fprintf(stderr, "%s\n", key);
+
 	  // send HTTP request
 	  snprintf(buf, sizeof(buf), "%s\n", key);
 	  if(send(MDBsock, buf, strlen(buf), 0) != strlen(buf))
@@ -265,16 +265,45 @@ void HandleTCPClient(int clntSocket, char* web_root, char* IPaddr, int MDBsock)
 	      fclose(input);
 	      die("send mdbsock failed");
 	    }
+
+	  // open socket to read results
 	  FILE* mdbsockfd;
 	  if((mdbsockfd = fdopen(MDBsock, "r")) == NULL)
 	    {
 	      fclose(input);
 	      die("fd mdb failed");
 	    }
+	  size_t n;
+	  while(strcmp(fgets(buf, sizeof(buf), mdbsockfd), "\n") != 0)
+	    //(n = fread(buf, 1, sizeof(buf), mdbsockfd) > 1))
+	    {
+	      fprintf(stderr, "%s\n", buf);
+	      fflush(stderr);
+
+	      //send results
+
+
+	    }
+	  fprintf(stderr, "hi");
+	  if(ferror(mdbsockfd))
+	    die("fread failed");
 	  
 
+	  // send results
 
-
+	  /* HTML TABLE FORMAT
+	  <table>
+	     <tr>
+	     <td>row 1, cell 1</td>
+	     <td>row 1, cell 2</td>
+	     </tr>
+	     <tr>
+	     <td>row 2, cell 1</td>
+	     </tr>
+	  </table>
+	  */
+	  
+	  fclose(mdbsockfd);
 	}
       fclose(input);
     }

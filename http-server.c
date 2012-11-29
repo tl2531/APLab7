@@ -116,6 +116,7 @@ int main(int argc, char **argv)
       
       HandleTCPClient(clntSock, webroot, clntIPaddr, MDBsock);
     }
+  
   /* NOT REACHED */
 }
 
@@ -270,7 +271,7 @@ void HandleTCPClient(int clntSocket, char* web_root, char* IPaddr, int MDBsock)
 	  if((mdbsockfd = fdopen(MDBsock, "r")) == NULL)
 	    {
 	      fclose(input);
-	      die("fd mdb failed");
+	      die("fileopen mdb failed");
 	    }
 	  char buf2[SENDSIZE];
 	  memset(buf, '\0', sizeof(buf));
@@ -282,7 +283,7 @@ void HandleTCPClient(int clntSocket, char* web_root, char* IPaddr, int MDBsock)
 		{
 		  fclose(mdbsockfd);
 		  fclose(input);
-		  die("send mdb fialed");
+		  die("send mdb failed");
 		}
 	    }
 	  // close out the table and html sending
@@ -291,13 +292,13 @@ void HandleTCPClient(int clntSocket, char* web_root, char* IPaddr, int MDBsock)
 	    {
 	      fclose(mdbsockfd);
 	      fclose(input);
-	      die("sendd.d fail");
+	      die("mdb send fail");
 	    }
 	  if(ferror(mdbsockfd))
 	    {
 	      fclose(mdbsockfd);
 	      fclose(input);
-	      die("fread failed");
+	      die("mdb fread failed");
 	    }
 	  fclose(mdbsockfd);
 	}

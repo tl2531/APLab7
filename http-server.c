@@ -175,7 +175,7 @@ void HandleTCPClient(int clntSocket, char* web_root, char* IPaddr, int MDBsock)
 	    "<p></body></html>\n";
 
 	  outtext = "200 OK\n";
-	  sendlength = sprintf(out_buffer, "%s", form);
+	  sendlength = sprintf(out_buffer, "HTTP/1.0 %s\n%s", outtext, form);
 	}
       // mdb-lookup print results page
       else if(strncmp(requestURI, "/mdb-lookup?key", 15) == 0)
@@ -190,7 +190,7 @@ void HandleTCPClient(int clntSocket, char* web_root, char* IPaddr, int MDBsock)
 	    "<tbody>\n";
 
 	  outtext = "200 OK\n";
-	  sendlength = sprintf(out_buffer, "%s", form);
+	  sendlength = sprintf(out_buffer, "HTTP/1.0 %s\n%s", outtext, form);
 	  type = 2;
 
 	}
@@ -275,19 +275,21 @@ void HandleTCPClient(int clntSocket, char* web_root, char* IPaddr, int MDBsock)
 	    }
 	  char buf2[SENDSIZE];
 	  memset(buf, '\0', sizeof(buf));
-	  while(strcmp(fgets(buf, sizeof(buf), mdbsockfd), "\n") != 0)
+	  char* s;
+	  while((s = fgets(buf, sizeof(buf), mdbsockfd)) && strcmp(s, "\n") != 0)
 	    {
 	      //send results
-	      sprintf(buf2, "<tr>\n<td>\n %s </td></tr>", buf);
+	      sprintf(buf2, "<tr><td>\n %s </td></tr>\n", buf);
 	      if(send(clntSocket, buf2, strlen(buf2), 0) != strlen(buf2))
 		{
 		  fclose(mdbsockfd);
 		  fclose(input);
 		  die("send mdb failed");
 		}
+	      memset(buf, '\0', sizeof(buf));
 	    }
 	  // close out the table and html sending
-	  snprintf(buf, strlen(buf), "</tbody></table></p></body></html>\n");
+	  sprintf(buf, "</tbody></table></p></body></html>\n");
 	  if(send(clntSocket, buf, strlen(buf), 0) != strlen(buf))
 	    {
 	      fclose(mdbsockfd);

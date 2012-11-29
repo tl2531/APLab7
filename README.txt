@@ -11,11 +11,6 @@ Part 2: Web server
 Part a: Serving static contents
 This part of my program works as directed. I ran valgrind on my program, testing using netcat and Safari, and the end result was All heap blocks were freed - no leaks are possible (0 errors from 0 contexts)
 
-This file should contain:
-
-  - description for each part
-  
-The description should indicate whether your solution for the part is
-working or not.  You may also want to include anything else you would
-like to communicate to the grader such as extra functionalities you
-implemented or how you tried to fix your non-working code.
+Part b: Serving Dynamic Contents
+This part of my program doesn't quite work as directed. I ran valgrind and there were no errors (but some still reachable, which was okay). The only problem is if you try to access a second mdb-lookup key value after you have done one already it will hang. The rest of this part works as directed, and it is only a minor error. You can still access other parts, like the tng page.
+I know the error involves how I detect the final '\n', but after trying a lot of ways I couldn't get it to work.
